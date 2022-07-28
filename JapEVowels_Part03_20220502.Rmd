@@ -1,0 +1,363 @@
+---
+title: "A Corpus-Based Acoustic Analysis of Monophthong Vowels among Japanese Learners and Native Speakers of English - Part 2"
+author: "Martin Schweinberger"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: word_document
+---
+
+# Introduction
+
+This R Notebook shows how to access Praat from R and how to extract formant values from wav files and their corresponding Praat TextGrids. The tutorials is based on [Phonetics Tools in R](https://marissabarlaz.github.io/portfolio/phoneticstools/] by Marissa Barlaz).
+
+## Preparation
+
+install packages
+
+```{r install, eval=F, message=F, warning=F}
+# install
+install.packages("tidyverse")
+install.packages("here")
+install.packages("adehabitatHR")
+install.packages("lme4")
+install.packages("sjPlot")
+install.packages("report")
+install.packages("flextable")
+```
+
+load packages
+
+```{r load, message=F, warning=F}
+library(tidyverse)
+library(here)
+library(adehabitatHR)
+library(lme4)
+library(sjPlot)
+library(report)
+library(flextable)
+```
+
+
+load data
+
+
+```{r data, message=F, warning=F}
+# load .rda data
+fdat  <- base::readRDS(file = here::here("data", "fdat.rda"))
+# inspect
+nrow(fdat); head(fdat)
+```
+
+
+
+
+# Bhattacharyya's affinity 
+
+function for extracting Bhattacharyya's affinity by type and target variety
+
+```{r bafun, message=F, warning=F}
+exba <- function(data, section, target, vwl1, vwl2){
+  ba <- data %>%
+  ungroup() %>%
+  dplyr::filter(type == section,
+                tvariety == target,
+                label == vwl1 | label == vwl2)
+
+  ba_formants <- ba %>%  dplyr::select(lobF1, lobF2)
+  # extract vowels
+  ba_vowel <- ba %>%  dplyr::select(vowel)
+  # spatial data frame
+  ba_spdf <- SpatialPointsDataFrame(ba_formants, ba_vowel)
+  # calculate Bhattacharyya's affinity
+  ba_ba <- kerneloverlap(ba_spdf, method = "BA")
+  # result
+  return(ba_ba[1,2])
+}
+```
+
+
+
+## I vs i: 
+
+
+```{r baius, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "us", vwl1 = "I", vwl2 = "i:")
+# ENS
+exba(data = fdat, section = "ENS", target = "us", vwl1 = "I", vwl2 = "i:")
+```
+
+```{r baigb, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "gb", vwl1 = "I", vwl2 = "i:")
+# ENS
+exba(data = fdat, section = "ENS", target = "gb", vwl1 = "I", vwl2 = "i:")
+```
+
+```{r Ii, message=F, warning=F}
+fdat %>%
+  dplyr::group_by(label) %>%
+  dplyr::mutate(meanF2 = mean(lobF2),
+                meanF1 = mean(lobF1)) %>%
+  dplyr::filter(label == "i:" | label == "I") %>%
+  ggplot(aes(x = lobF2, y = lobF1, color = vowel, fill = vowel)) +
+  geom_point(alpha = 0.05) +
+  facet_grid(tvariety ~ type) +
+  scale_x_reverse(position = "top") + 
+  scale_y_reverse(position = "right") + 
+  stat_ellipse(aes(group = label), level = .5) +
+  geom_text(aes(x = meanF2, y = meanF1, 
+                color = vowel, 
+                label = vowel), size = 5) +
+  #scale_color_viridis(discrete = TRUE) +
+  scale_color_manual(values = c("red", "blue")) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "Formant 2 (Lobanov)", y = "Formant 1(Lobanov)")
+ggsave(file = here("images", "hifront.png"), height = 5,  width = 5, dpi = 320)
+```
+
+
+## U vs u:
+
+High-back 
+
+```{r baius, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "us", vwl1 = "U", vwl2 = "u:")
+# ENS
+exba(data = fdat, section = "ENS", target = "us", vwl1 = "U", vwl2 = "u:")
+```
+
+```{r baigb, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "gb", vwl1 = "U", vwl2 = "u:")
+# ENS
+exba(data = fdat, section = "ENS", target = "gb", vwl1 = "U", vwl2 = "u:")
+```
+
+
+```{r, eval = F}
+fdat %>%
+  dplyr::group_by(label) %>%
+  dplyr::mutate(meanF2 = mean(lobF2),
+                meanF1 = mean(lobF1)) %>%
+  dplyr::filter(label == "u:" | label == "U") %>%
+  ggplot(aes(x = lobF2, y = lobF1, color = vowel, fill = vowel)) +
+  geom_point(alpha = 0.05) +
+  facet_grid(tvariety ~ type) +
+  scale_x_reverse(position = "top") + 
+  scale_y_reverse(position = "right") + 
+  stat_ellipse(aes(group = label), level = .95) +
+  geom_text(aes(x = meanF2, y = meanF1, 
+                color = vowel, 
+                label = vowel), size = 5) +
+  scale_color_viridis(discrete = TRUE) +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  labs(x = "Hertz (mean Formant 2)", y = "Hertz (mean Formant 1)")
+ggsave(file = here("images", "hiback.png"), height = 5,  width = 5, dpi = 320)
+```
+
+
+## Q vs O:
+
+Mid-back 
+
+```{r baius, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "us", vwl1 = "Q", vwl2 = "O:")
+# ENS
+exba(data = fdat, section = "ENS", target = "us", vwl1 = "Q", vwl2 = "O:")
+```
+
+```{r baigb, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "gb", vwl1 = "Q", vwl2 = "O:")
+# ENS
+#exba(data = fdat, section = "ENS", target = "gb", vwl1 = "Q", vwl2 = "O:")
+```
+
+```{r, eval = F}
+fdat %>%
+  dplyr::group_by(label) %>%
+  dplyr::mutate(meanF2 = mean(lobF2),
+                meanF1 = mean(lobF1)) %>%
+  dplyr::filter(label == "O:" | label == "Q") %>%
+  ggplot(aes(x = lobF2, y = lobF1, color = vowel, fill = vowel)) +
+  geom_point(alpha = 0.1) +
+  facet_grid(tvariety ~ type) +
+  scale_x_reverse(position = "top") + 
+  scale_y_reverse(position = "right") + 
+  stat_ellipse(aes(group = label), level = .95) +
+  geom_text(aes(x = meanF2, y = meanF1, 
+                color = vowel, 
+                label = vowel), size = 5) +
+  scale_color_viridis(discrete = TRUE) +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  labs(x = "Hertz (mean Formant 2)", y = "Hertz (mean Formant 1)")
+ggsave(file = here("images", "midback.png"), height = 5,  width = 5, dpi = 320)
+```
+
+## Ae vs e and E
+
+Mid-front 
+
+```{r baius, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "us", vwl1 = "E", vwl2 = "{")
+# ENS
+exba(data = fdat, section = "ENS", target = "us", vwl1 = "E", vwl2 = "{")
+```
+
+```{r baigb, message=F, warning=F}
+# JPN
+exba(data = fdat, section = "JPN", target = "gb", vwl1 = "e", vwl2 = "{")
+# ENS
+exba(data = fdat, section = "ENS", target = "gb", vwl1 = "e", vwl2 = "{")
+```
+
+
+```{r, eval = F}
+fdat %>%
+  dplyr::group_by(label) %>%
+  dplyr::mutate(meanF2 = mean(lobF2),
+                meanF1 = mean(lobF1)) %>%
+  dplyr::filter(label == "E" | label == "e" | label == "{") %>%
+  ggplot(aes(x = lobF2, y = lobF1, color = vowel, fill = vowel)) +
+  geom_point(alpha = 0.05) +
+  facet_grid(tvariety ~ type) +
+  scale_x_reverse(position = "top") + 
+  scale_y_reverse(position = "right") + 
+  stat_ellipse(aes(group = label), level = .95) +
+  geom_text(aes(x = meanF2, y = meanF1, 
+                color = vowel, 
+                label = vowel), size = 5) +
+  scale_color_viridis(discrete = TRUE) +
+  theme_minimal() +
+  theme(legend.position = "right") +
+  labs(x = "Hertz (mean Formant 2)", y = "Hertz (mean Formant 1)")
+ggsave(file = here("images", "midfront.png"), height = 5,  width = 5, dpi = 320)
+```
+
+
+# Duration
+
+```{r durtb, message=F, warning=F}
+durtb <- fdat %>%
+  dplyr::group_by(type, tvariety, vowel) %>%
+  dplyr::summarise(duration_mean = round(mean(duration), 3), 
+                   duration_sd = round(sd(duration), 3),
+                   freq = n())
+# inspect
+durtb
+```
+
+
+```{r}
+durtb %>%
+  dplyr::mutate(mean_sd = paste0(duration_mean, " (", duration_sd, ", N = ", freq, ")")) %>%
+  dplyr::select(-duration_mean, -duration_sd, -freq) %>%
+  tidyr::spread(type, mean_sd) %>%
+  flextable::flextable()
+```
+
+
+```{r durplot, message=F, warning=F}
+fdat %>%
+  dplyr::group_by(type, tvariety, vowel) %>%
+  dplyr::summarise(duration = mean(duration)) %>%
+  ggplot(aes(x = vowel, y = duration, fill = type)) +
+  geom_bar(stat = "identity", position=position_dodge()) +
+  facet_grid( ~ tvariety) +
+  theme_bw()
+```
+
+
+
+```{r}
+diff_dat <- fdat %>%
+  dplyr::group_by(type, tvariety, label) %>%
+  dplyr::summarise(dur = mean(duration)) %>%
+  dplyr::filter(label == "I" | 
+                  label == "i:" | 
+                  label == "U" | 
+                  label == "u:" | 
+                  label == "Q" | 
+                  label == "O:" ) %>%
+  tidyr::spread(label, dur) %>%
+  dplyr::mutate(diff_i = `i:` - I,
+                diff_u = `u:` - U,
+                diff_o = `O:` - Q) %>%
+  dplyr::select(-I, -U, -Q, -`i:`, -`u:`, -`O:`) %>%
+  tidyr::gather(pair, diff, diff_i:diff_o) %>%
+  dplyr::mutate(pair = dplyr::case_when(pair == "diff_i" ~ "Ii",
+                                        pair == "diff_u" ~ "Uu",
+                                        pair == "diff_o" ~ "Oo"))
+# inspect
+diff_dat
+```
+
+
+```{r}
+diff_dat %>%
+  ggplot(aes(x = pair, y = diff, fill = type)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_grid(~tvariety)
+```
+
+
+# Overview tables
+
+
+```{r tb1}
+tb1 <- fdat %>%
+  dplyr::group_by(type, tvariety) %>%
+  dplyr::summarise(speakers = length(unique(fspeaker)),
+                   vowel_tokens = n())
+# inspect
+tb1
+```
+
+```{r tb2}
+tb2 <- fdat %>%
+  dplyr::group_by(type, tvariety, vowel) %>%
+  dplyr::summarise(tokens = n(),
+                   f1_raw = paste0(round(mean(F1), 1), 
+                                   " (", round(sd(F1), 1), ")"), 
+                   f1_lob = paste0(round(mean(lobF1), 3), 
+                                   " (", round(sd(lobF1), 3),  ")"),
+                   f1_bark = paste0(round(mean(barkF1), 2), 
+                                    " (", round(sd(barkF1), 2),  ")"),
+                   f2_raw = paste0(round(mean(F2), 1),
+                                   " (", round(sd(F2), 1), ")"), 
+                   f2_lob = paste0(round(mean(lobF2), 3),
+                                   " (", round(sd(lobF2), 3), ")"), 
+                   f2_bark = paste0(round(mean(barkF2), 2),
+                                    " (", round(sd(barkF2), 2), ")"),
+                   dur = paste0(round(mean(duration), 3), 
+                                " (", round(sd(duration), 3), ")"))
+# inspect
+tb2
+```
+
+
+
+# Citation & Session Info
+
+Schweinberger, Martin. `r format(Sys.time(), '%Y')`. A Corpus-Based Acoustic Analysis of Monophthongal Vowels among Japanese Learners and Native Speakers of English. Brisbane: The University of Queensland, School of Languages and Cultures. url: https://slcladal.github.io/praatrf.html (Version `r format(Sys.time(), '%Y.%m.%d')`).
+
+@manual{schweinberger`r format(Sys.time(), '%Y')`praatrf,
+  author = {Schweinberger, Martin},
+  title = {A Corpus-Based Acoustic Analysis of Monophthongal Vowels among Japanese Learners and Native Speakers of English},
+  note = {https://slcladal.github.io/praatrf.html},
+  year = {`r format(Sys.time(), '%Y')`},
+  organization = "The University of Queensland, School of Languages and Cultures},
+  address = {Brisbane},
+  edition = {`r format(Sys.time(), '%Y.%m.%d')`}
+}
+
+
+```{r}
+sessionInfo()
+```

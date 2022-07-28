@@ -1,0 +1,266 @@
+---
+title: "A Corpus-Based Acoustic Analysis of Monophthong Vowels among Japanese Learners and Native Speakers of English - Part 2"
+author: "Martin Schweinberger"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: word_document
+---
+
+# Introduction
+
+This R Notebook shows how to access Praat from R and how to extract formant values from wav files and their corresponding Praat TextGrids. The tutorials is based on [Phonetics Tools in R](https://marissabarlaz.github.io/portfolio/phoneticstools/] by Marissa Barlaz).
+
+## Preparation
+
+install packages
+
+```{r install, eval=F, message=F, warning=F}
+# install
+install.packages("tidyverse")
+install.packages("here")
+install.packages("adehabitatHR")
+install.packages("lme4")
+install.packages("sjPlot")
+install.packages("report")
+install.packages("flextable")
+install.packages("cowplot")     
+install.packages("randomForest") 
+install.packages("rms") 
+```
+
+load packages
+
+```{r load, message=F, warning=F}
+library(tidyverse)
+library(here)
+library(adehabitatHR)
+library(lme4)
+library(sjPlot)
+library(report)
+library(flextable)
+library(cowplot)      
+library(randomForest) 
+library(rms)    
+# set options
+options(stringsAsFactors = F)                           
+options(scipen = 999) 
+options(max.print=10000)
+```
+
+
+load data
+
+
+```{r data, message=F, warning=F}
+# load .rda data
+fdat  <- base::readRDS(file = here::here("data", "fdat.rda")) 
+# inspect
+nrow(fdat); head(fdat)
+```
+
+# Reduce data
+
+```{r redux, message=F, warning=F}
+bdat <- fdat %>%
+  dplyr::rename(YearsStay = Yrs.of.Stay....Yrs.,
+                SpeakerType = ENS.Type,
+                Occupation = Major..Occupation) %>%
+  dplyr::select(-tmin, -tmax, -midpoint, -F1, -F2, -F3, -tgender, -tformants, -YearsStay, 
+                -Test, - Score, -target_f1, -target_f2, -target_f3, -normF1, -normF2, -cF1, -cF2,
+                -file, -Country, -edist, -barkF1, -barkF2, -Code, -id, -speaker,
+                -vowel) %>%
+  dplyr::mutate(label = stringr::str_remove_all(label, ":"))
+# inspect
+head(bdat)
+```
+
+
+
+# Split data
+
+```{r}
+nsd <- bdat %>%
+  dplyr::filter(type == "ENS",
+                tvariety == "us") %>%
+  dplyr::select(-type, -tvariety) %>%
+  dplyr::mutate_if(is.character, factor)
+# inspect
+head(nsd)
+```
+
+
+
+
+# MuPDARF
+
+
+Now, we perform a random forest analysis of the native speaker data.
+
+```{r l2amp_03_13, message=FALSE, warning=FALSE}
+#           RANDOM FOREST: NATIVE-SPEAKRES
+# set seed
+set.seed(20200204)
+nsrf <- randomForest(ED ~ label + gender + Age + SpeakerType + Occupation + 
+                       lobF1 + lobF2 + duration + WordType, 
+                     data=nsd, ntree=500, proximity=TRUE,
+                     #keep.forest=FALSE, 
+                     importance=TRUE)
+# inspect rf results
+nsrf 
+```
+
+Next, we plot the results.
+
+```{r l2amp_03_15, message=FALSE, warning=FALSE}
+plot(nsrf)
+```
+
+
+Now, we inspect which variables are important for the predictions.
+
+```{r l2amp_03_33, echo=T, eval = T, message=FALSE, warning=FALSE}
+png("images/VarImpRF1.png",  width = 700, height = 480) # save plot
+varImpPlot(nsrf, main = "", pch = 20, cex = 1.5) 
+dev.off()
+varImpPlot(nsrf, main = "", pch = 20, cex = 1.5)
+```
+
+```{r l2amp_03_39, echo=T, eval = T, message=FALSE, warning=FALSE}
+library(Hmisc)
+ampred <- as.numeric(predict(nsrf, nsd))
+ampred <- ifelse(ampred == 1, 0, 1)
+test <- as.numeric(nsd$very) 
+test <- ifelse(test == 1, 0, 1)
+somers2(ampred, test) 
+```
+
+
+Now, we use the random forest analysis of the native speakers to predict how a native speaker would have amplified the adjectives in the non-native speaker data. In a first step, we extract only non-native speaker data.
+
+```{r l2amp_03_43, message=FALSE, warning=FALSE}
+#           RANDOM FOREST: NON-NATIVE-SPEAKERS
+nnsd <- bdat %>%
+  dplyr::filter(type != "ENS",
+                tvariety == "us") %>%
+  droplevels() %>%
+  dplyr::select(-type, -tvariety)
+head(nnsd); str(nnsd)
+```
+
+Next, we use the random forest analysis of the native speakers to predict how a native speaker would have amplified the adjectives.
+
+```{r l2amp_03_45, echo=T, eval = T, message=FALSE, warning=FALSE}
+# extract prediction for training data
+pnns <- predict(nsrf, nnsd) 
+# inspect predictions
+head(pnns); head(nnsd$ED)  
+```
+
+Now, we create a confusion matrix to check the accuracy of the prediction
+
+```{r l2amp_03_49, echo=T, eval = T, message=FALSE, warning=FALSE}
+confusionMatrix(pnns, nnsd$very)
+# calculate increase in prediction accuracy compared to base-line model
+0.6163/0.5324
+```
+
+The prediction accuracy increases by 13.35 percent if use use our model compared to a no information model.
+
+```{r l2amp_03_51, echo=T, eval = T, message=FALSE, warning=FALSE}
+verynnsd <- nnsd
+verynnsd$NSvery <- predict(nsrf, nnsd)
+verynnsd <- verynnsd %>%
+  dplyr::rename(NNSvery = very) %>%
+  dplyr::select(Language, Adjective, NNSvery, NSvery) %>%
+  dplyr::group_by(Language, Adjective) %>%
+  dplyr::summarise(NAdj = n(),
+                   FrqNNSVery = sum(as.numeric(as.character(NNSvery))),
+                   FrqNSVery = sum(as.numeric(as.character(NSvery)))) %>%
+  dplyr::mutate(a = NAdj-FrqNNSVery,
+                b = FrqNNSVery,
+                c = NAdj-FrqNSVery,
+                d = FrqNSVery) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(p = as.vector(unlist(fisher.test(matrix(c(a, b, c, d), ncol = 2, byrow = T), simulate.p.value=TRUE)[1]))) %>%
+    dplyr::mutate(x2 = as.vector(unlist(chisq.test(matrix(c(a, b, c, d), ncol = 2, byrow = T), simulate.p.value=TRUE)[1]))) %>%
+  dplyr::mutate(phi = sqrt((x2/(a + b + c + d)))) %>%
+  dplyr::mutate(RateVeryNS = round(FrqNSVery/NAdj*100, 2),
+                RateVeryNNS = round(FrqNNSVery/NAdj*100, 2)) %>%
+  dplyr::mutate(Type = ifelse(FrqNSVery > FrqNNSVery, "Underuse",
+                              ifelse(FrqNNSVery > FrqNSVery, "Overuse", "Equal"))) %>%
+    dplyr::mutate(Significance = ifelse(p <= .05, "p<.001",
+                ifelse(p <= .01, "p<.01",
+                       ifelse(p <= .001, "p<.001", "n.s.")))) %>%
+  dplyr::mutate(NRows = nrow(verynnsd)) %>%
+  dplyr::ungroup() %>%
+  dplyr::arrange(p) %>%
+  dplyr::mutate(j = 1:n()) %>%
+  # perform benjamini-holm correction
+  dplyr::mutate(corr05 = ((j/NRows)*0.05)) %>%
+  dplyr::mutate(corr01 = ((j/NRows)*0.01)) %>%
+  dplyr::mutate(corr001 = ((j/NRows)*0.001)) %>%
+  # calculate corrected significance status
+  dplyr::mutate(CorrSignificance = ifelse(p <= corr001, "p<.001",
+                ifelse(p <= corr01, "p<.01",
+                       ifelse(p <= corr001, "p<.001", "n.s.")))) %>%
+  dplyr::mutate(p = round(p, 6)) %>%
+  dplyr::mutate(x2 = round(x2, 1)) %>%
+  dplyr::mutate(phi = round(phi, 1)) %>%
+  dplyr::select(-a, -b, -c, -d, - j, -NRows, -corr05, -corr01, -corr001,
+                -Significance)
+head(verynnsd)
+```
+
+We now reduce the table and select only those rows which contain Bonferroni corrected significant results.
+
+```{r l2amp_03_53, echo=T, eval = T, message=FALSE, warning=FALSE}
+verynnsd <- verynnsd %>%
+  dplyr::filter(CorrSignificance != "n.s.") %>%
+  dplyr::filter(Adjective != "other")
+# save results
+write.table(verynnsd, "datatables/verynnsd_sigdiff.txt", sep = "\t", row.names = F)
+# inspect results
+verynnsd
+```
+
+```{r l2amp_03_55, echo=T, eval = T, message=FALSE, warning=FALSE}
+library(Hmisc)
+ampred <- as.numeric(predict(nsrf, nnsd))
+ampred <- ifelse(ampred == 1, 0, 1)
+test <- as.numeric(nnsd$very) 
+test <- ifelse(test == 1, 0, 1)
+somers2(ampred, test) 
+```
+
+Next, we add the difference between predictions and observed amplification to the data.
+
+```{r l2amp_03_57, echo=T, eval = T, message=FALSE, warning=FALSE}
+# add native choice prediction to data
+nnsd$NativeChoice <- as.vector(pnns)
+nnsd$NativeChoice <- as.factor(nnsd$NativeChoice)
+# code if choice of nns is nativelike or not
+nnsd$very <- as.character(nnsd$very)
+nnsd$NativeChoice <- as.character(nnsd$NativeChoice)
+nnsd$NonNativeLike <- ifelse(nnsd$very == nnsd$NativeChoice, 0, 1)
+nnsd$very <- NULL
+# inspect new data
+head(nnsd)
+```
+
+# Citation & Session Info
+
+Schweinberger, Martin. `r format(Sys.time(), '%Y')`. A Corpus-Based Acoustic Analysis of Monophthongal Vowels among Japanese Learners and Native Speakers of English. Brisbane: The University of Queensland, School of Languages and Cultures. url: https://slcladal.github.io/praatrf.html (Version `r format(Sys.time(), '%Y.%m.%d')`).
+
+@manual{schweinberger`r format(Sys.time(), '%Y')`praatrf,
+  author = {Schweinberger, Martin},
+  title = {A Corpus-Based Acoustic Analysis of Monophthongal Vowels among Japanese Learners and Native Speakers of English},
+  note = {https://slcladal.github.io/praatrf.html},
+  year = {`r format(Sys.time(), '%Y')`},
+  organization = "The University of Queensland, School of Languages and Cultures},
+  address = {Brisbane},
+  edition = {`r format(Sys.time(), '%Y.%m.%d')`}
+}
+
+
+```{r}
+sessionInfo()
+```
